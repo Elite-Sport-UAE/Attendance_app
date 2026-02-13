@@ -5,3 +5,9 @@ backgroundColor = "#FFFFFF"
 secondaryBackgroundColor = "#F4F6F8"
 textColor = "#111827"
 font = "sans serif"
+
+[client]
+showSidebarNavigation = false
+
+[ui]
+hideTopBar = true

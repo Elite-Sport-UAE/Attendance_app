@@ -15,6 +15,19 @@ if not st.session_state.get("is_authed", False):
 
 st.set_page_config(page_title="ESUAE Attendance Register", layout="wide")
 
+st.markdown(
+    """
+    <style>
+        [data-testid="stSidebar"] {display: none !important;}
+        [data-testid="stSidebarNav"] {display: none !important;}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
+
+
 # -------------------------------------------------------
 # HEADER
 # -------------------------------------------------------
@@ -58,14 +71,20 @@ with st.expander("Data Management", expanded=False):
 
     col1, col2 = st.columns([1, 1])
 
+    sharepoint_excel_url = "https://teamuaesports.sharepoint.com/:x:/s/AllThingsData/IQAHwcMkC8GaS6_3-8vQ5VfoAXKVAEPAmNp491lt0EjCfh8?e=whmmvE"
+
     with col1:
-        if st.button("Open Athlete List Excel File"):
-            os.startfile(lookup_excel_path)
+        st.link_button(
+            "Open Athlete List Excel File",
+            sharepoint_excel_url,
+            use_container_width=True
+        )
 
     with col2:
         if st.button("Refresh Lookup Data"):
             st.cache_data.clear()
             st.rerun()
+
 
 
 # -------------------------------------------------------
