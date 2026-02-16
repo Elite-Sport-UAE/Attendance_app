@@ -4,16 +4,18 @@ import os
 import re
 from datetime import date, datetime, timezone
 
+
 if not st.session_state.get("is_authed", False):
-    st.warning("Please enter the access code on the Home page.")
+    st.warning("Please sign in on the Home page.")
     st.stop()
 
+logged_in_email = st.session_state.get("user_email", "")
 
 # -------------------------------------------------------
 # CONFIG
 # -------------------------------------------------------
 
-st.set_page_config(page_title="ESUAE Attendance Register", layout="wide")
+st.set_page_config(page_title="Attendance Portal", layout="wide")
 
 st.markdown(
     """
@@ -25,34 +27,150 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.markdown("""
+<style>
+
+/* Compact, consistent buttons */
+div.stButton > button,
+a.stLinkButton > a {
+    height: 34px !important;
+    padding: 0 14px !important;
+    font-size: 0.85rem !important;
+    border-radius: 8px !important;
+    width: 160px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+}
+
+/* Prevent link button container from stretching */
+a.stLinkButton {
+    width: auto !important;
+}
+
+/* Default neutral buttons */
+div.stButton > button,
+div.stLinkButton > a {
+    background: white !important;
+    color: #111827 !important;
+    border: 1px solid #D1D5DB !important;
+}
+
+/* Gold Logout button */
+.logout-btn div.stButton > button {
+    background-color: #D4AF37 !important;
+    color: #ffffff !important;
+    border: none !important;
+}
+
+.logout-btn div.stButton > button:hover {
+    background-color: #c59f2f !important;
+    color: #ffffff !important;
+}
+
+/* Force button wrapper to align right */
+.logout-wrap {
+    display: flex;
+    justify-content: flex-end;
+    width: 100%;
+}
+            
+/* Save Attendance fixed center */
+.center-save {
+    position: fixed;
+    bottom: 80px;        /* distance from bottom */
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+}       
+
+/* Data Management: force Input Data and Refresh Lookup to identical size */
+div[data-testid="stExpander"] div.stLinkButton > a,
+div[data-testid="stExpander"] div.stButton > button {
+    width: 160px !important;
+    min-width: 160px !important;
+    height: 36px !important;
+
+    padding: 0 16px !important;
+    line-height: 36px !important;
+
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+
+    box-sizing: border-box !important;
+    border-radius: 8px !important;
+    border: 1px solid #D1D5DB !important;
+
+    font-size: 0.85rem !important;
+    font-weight: 500 !important;
+
+    text-decoration: none !important;
+}
+
+            
+</style>
+""", unsafe_allow_html=True)
 
 
+# HEADERS
 
-# -------------------------------------------------------
-# HEADER
-# -------------------------------------------------------
-
-header_left, header_right = st.columns([1, 5])
+header_left, header_mid, header_right = st.columns([1, 12, 2])
 
 with header_left:
     st.image("assets/esuae_logo.png", width=90)
 
-with header_right:
+with header_mid:
     st.markdown(
         """
         <div style="padding-top:12px;">
             <div style="font-size:34px; font-weight:700; color:#111827;">
-                ESUAE Attendance Register
+                ESUAE Attendance Portal
             </div>
             <div style="font-size:15px; color:#6B7280;">
-                Elite Sport UAE • Training Session Management
+                Elite Sport UAE • Training Session Attendance
             </div>
         </div>
         """,
         unsafe_allow_html=True
     )
 
-st.write("")
+with header_right:
+
+    full_email = st.session_state.get("user_email", "User")
+
+    # Extract username before @
+    display_name = full_email.split("@")[0] if "@" in full_email else full_email
+    display_name = display_name.replace(".", " ").title()
+
+    # Right align using Streamlit columns
+    spacer, content = st.columns([1, 4])
+
+    with content:
+        st.markdown(
+            f"""
+            <div style="text-align:right; padding-top:18px; padding-right:20px;">
+                <div style="font-size:13px; color:#6B7280;">Logged in</div>
+                <div style="font-size:15px; font-weight:600; color:#111827;">
+                    {display_name}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+        st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+
+        # Button directly under name
+        st.markdown("<div style='text-align:right; padding-right:20px;'>", unsafe_allow_html=True)
+
+        if st.button("Logout", key="logout_btn"):
+            for k in ["is_authed", "attendance_data", "last_selected_sport", "user_code"]:
+                if k in st.session_state:
+                    del st.session_state[k]
+            st.switch_page("Home.py")
+
+        st.markdown("</div>", unsafe_allow_html=True)
 
 
 # -------------------------------------------------------
@@ -68,23 +186,17 @@ os.makedirs(sessions_dir, exist_ok=True)
 # -------------------------------------------------------
 
 with st.expander("Data Management", expanded=False):
-
-    col1, col2 = st.columns([1, 1])
-
     sharepoint_excel_url = "https://teamuaesports.sharepoint.com/:x:/s/AllThingsData/IQAHwcMkC8GaS6_3-8vQ5VfoAXKVAEPAmNp491lt0EjCfh8?e=whmmvE"
 
-    with col1:
-        st.link_button(
-            "Open Athlete List Excel File",
-            sharepoint_excel_url,
-            use_container_width=True
-        )
+    b1, b2, _ = st.columns([1, 1, 8])
 
-    with col2:
-        if st.button("Refresh Lookup Data"):
+    with b1:
+        st.link_button("Input Data", sharepoint_excel_url)
+
+    with b2:
+        if st.button("Refresh Lookup", key="refresh_lookup_btn"):
             st.cache_data.clear()
             st.rerun()
-
 
 
 # -------------------------------------------------------
@@ -102,7 +214,7 @@ def build_session_id(session_date, selected_sport, coach_name, training_type, lo
     ts = datetime.now().strftime("%H%M%S")
     return f"{session_date}__{safe_filename(selected_sport)}__{safe_filename(coach_name)}__{safe_filename(training_type)}__{ts}"
 
-def build_attendance_df(session_id, session_date, selected_sport, coach_name, training_type, location, session_duration, attendance_dict):
+def build_attendance_df(session_id, session_date, selected_sport, coach_name, training_type, location, session_duration, attendance_dict, logged_in_email):
     duration_minutes = int(str(session_duration).split()[0])
     saved_at_utc = datetime.now(timezone.utc).isoformat()
 
@@ -126,7 +238,9 @@ def build_attendance_df(session_id, session_date, selected_sport, coach_name, tr
             "AthleteName": athlete_name,
             "Status": status,
             "Reason": reason,
-            "SavedAtUtc": saved_at_utc
+            "SavedAtUtc": saved_at_utc,
+            "LoggedInEmail": logged_in_email
+
         })
 
     return pd.DataFrame(rows)
@@ -192,7 +306,7 @@ with left:
 with right:
     selected_sport = st.selectbox("Sport", options=["Select sport"] + sports_list, index=0)
     training_type = st.selectbox("Training Type", options=["Select type"] + training_type_list, index=0)
-    session_duration = st.selectbox("Session Duration", options=["60 minutes", "75 minutes", "90 minutes", "120 minutes"], index=2)
+    session_duration = st.selectbox("Session Duration", options=["30 minutes", "45 minutes", "60 minutes", "75 minutes", "90 minutes", "120 minutes"], index=2)
 
 # Reset attendance if sport changes
 if "last_selected_sport" not in st.session_state:
@@ -274,16 +388,16 @@ ready_to_save = (
     and len(filtered_athletes) > 0
 )
 
-st.markdown("")
+st.markdown("<div class='center-save'>", unsafe_allow_html=True)
 
-save_col = st.columns([1, 2, 1])[1]
+save_clicked = st.button(
+    "Save Attendance",
+    disabled=not ready_to_save,
+    key="save_attendance_btn"
+)
 
-with save_col:
-    save_clicked = st.button(
-        "Save Attendance",
-        disabled=not ready_to_save,
-        use_container_width=True
-    )
+st.markdown("</div>", unsafe_allow_html=True)
+
 
 if save_clicked:
 
@@ -300,15 +414,17 @@ if save_clicked:
         )
 
         df_session = build_attendance_df(
-            session_id=session_id,
-            session_date=session_date,
-            selected_sport=selected_sport,
-            coach_name=coach_name,
-            training_type=training_type,
-            location=location,
-            session_duration=session_duration,
-            attendance_dict=attendance_to_save
-        )
+        session_id=session_id,
+        session_date=session_date,
+        selected_sport=selected_sport,
+        coach_name=coach_name,
+        training_type=training_type,
+        location=location,
+        session_duration=session_duration,
+        attendance_dict=attendance_to_save,
+        logged_in_email=logged_in_email
+    )
+
 
         file_name = f"{session_id}__{int(str(session_duration).split()[0])}min.xlsx"
         file_path = os.path.join(sessions_dir, file_name)
