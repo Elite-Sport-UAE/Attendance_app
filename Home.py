@@ -105,7 +105,7 @@ with right:
     password = st.text_input("Password", type="password")
     
     # Login button
-    login_clicked = st.button("LOG IN")
+    login_clicked = st.button("Login")
     
     st.markdown('</div>', unsafe_allow_html=True)
     
