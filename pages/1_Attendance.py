@@ -2,7 +2,59 @@ import streamlit as st
 import pandas as pd
 import os
 import re
+import requests
+from io import BytesIO
 from datetime import date, datetime, timezone
+
+# st.write("Secrets keys:", list(st.secrets.keys()))
+# get access token for Microsoft Graph API using client credentials flow
+def get_access_token():
+
+    tenant = st.secrets["TENANT_ID"]
+    client = st.secrets["CLIENT_ID"]
+    secret = st.secrets["CLIENT_SECRET"]
+
+    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+    data = {
+        "client_id": client,
+        "client_secret": secret,
+        "scope": "https://graph.microsoft.com/.default",
+        "grant_type": "client_credentials",
+    }
+
+    r = requests.post(url, data=data)
+    return r.json()["access_token"]
+
+
+def get_lookup_workbook_bytes_graph():
+    token = get_access_token()
+
+    site = st.secrets["SHAREPOINT_SITE"]
+    site_name = st.secrets["SHAREPOINT_SITE_NAME"]
+    path = st.secrets["LOOKUP_FILE_PATH"]
+
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    site_url = f"https://graph.microsoft.com/v1.0/sites/{site}:/sites/{site_name}"
+    site_resp = requests.get(site_url, headers=headers)
+    site_resp.raise_for_status()
+    site_id = site_resp.json()["id"]
+
+    file_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{path}:/content"
+    file_resp = requests.get(file_url, headers=headers)
+    file_resp.raise_for_status()
+
+    content_type = file_resp.headers.get("Content-Type", "")
+    if "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" not in content_type:
+        raise ValueError(
+            f"Downloaded content is not an Excel file. Content-Type: {content_type}. "
+            f"Check LOOKUP_FILE_PATH in secrets.toml."
+        )
+
+    return file_resp.content
 
 # -------------------------------------------------------
 # AUTH CHECK
@@ -157,6 +209,15 @@ lookup_excel_path = r"C:\Users\AishwarDhawan\General Authority of sports\All Thi
 sessions_dir = r"C:\Users\AishwarDhawan\General Authority of sports\All Things Data - ESUAE Attendance\Attendance\sessions"
 os.makedirs(sessions_dir, exist_ok=True)
 
+def get_lookup_workbook_bytes_local() -> bytes:
+    with open(lookup_excel_path, "rb") as f:
+        return f.read()
+
+def save_session_file_local(file_name: str, file_bytes: bytes) -> None:
+    file_path = os.path.join(sessions_dir, file_name)
+    with open(file_path, "wb") as f:
+        f.write(file_bytes)
+
 # -------------------------------------------------------
 # HELPERS
 # -------------------------------------------------------
@@ -209,18 +270,18 @@ def build_attendance_df(session_id, session_date, selected_sport, coach_name,
 # -------------------------------------------------------
 
 @st.cache_data(ttl=30)
-def load_lookup_data(path):
-    athlete_df = pd.read_excel(path, sheet_name="athlete_names")
-    coach_df = pd.read_excel(path, sheet_name="coach_names")
-    sport_df = pd.read_excel(path, sheet_name="sport")
-    training_type_df = pd.read_excel(path, sheet_name="training_type")
-    location_df = pd.read_excel(path, sheet_name="location")
-    reason_df = pd.read_excel(path, sheet_name="reason_absence")
+def load_lookup_data(file_bytes: bytes):
+    athlete_df = pd.read_excel(BytesIO(file_bytes), sheet_name="athlete_names", engine="openpyxl")
+    coach_df = pd.read_excel(BytesIO(file_bytes), sheet_name="coach_names", engine="openpyxl")
+    sport_df = pd.read_excel(BytesIO(file_bytes), sheet_name="sport", engine="openpyxl")
+    training_type_df = pd.read_excel(BytesIO(file_bytes), sheet_name="training_type", engine="openpyxl")
+    location_df = pd.read_excel(BytesIO(file_bytes), sheet_name="location", engine="openpyxl")
+    reason_df = pd.read_excel(BytesIO(file_bytes), sheet_name="reason_absence", engine="openpyxl")
     return athlete_df, coach_df, sport_df, training_type_df, location_df, reason_df
 
 try:
-    athlete_df, coach_df, sport_df, training_type_df, location_df, reason_df = load_lookup_data(lookup_excel_path)
-    st.toast("Lookup data loaded", icon="✅")
+    lookup_file_bytes = get_lookup_workbook_bytes_graph()
+    athlete_df, coach_df, sport_df, training_type_df, location_df, reason_df = load_lookup_data(lookup_file_bytes)
 except Exception as e:
     st.error(f"Error loading Excel file: {e}")
     st.stop()
@@ -362,7 +423,6 @@ st.markdown("<div class='center-save'>", unsafe_allow_html=True)
 save_clicked = st.button("Save Attendance", disabled=not ready_to_save)
 
 st.markdown("</div>", unsafe_allow_html=True)
-
 if save_clicked:
 
     attendance_to_save = {
@@ -388,10 +448,12 @@ if save_clicked:
         )
 
         file_name = f"{session_id}.xlsx"
-        file_path = os.path.join(sessions_dir, file_name)
+        output = BytesIO()
 
-        with pd.ExcelWriter(file_path, engine="openpyxl") as writer:
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_session.to_excel(writer, sheet_name="attendance", index=False)
+
+        save_session_file_local(file_name, output.getvalue())
 
         st.success(f"Saved session file: {file_name}")
         st.session_state.attendance_data = {}

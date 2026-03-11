@@ -1,1 +1,9 @@
-streamlitpandasnumpyopenpyxlaltairvalidatorsgspreadoauth2client
+streamlit
+pandas
+numpy
+openpyxl
+altair
+validators
+gspread
+oauth2client
+requests
