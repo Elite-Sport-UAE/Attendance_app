@@ -113,8 +113,8 @@ if login_clicked:
     email = email.strip().lower()
     password = password.strip()
     users = dict(st.secrets["auth_users"])
-    st.write(users)
-    st.write(email)
+    #st.write(users)
+    #st.write(email)
 
     if email in users and password == users[email]:
         st.session_state["is_authed"] = True
