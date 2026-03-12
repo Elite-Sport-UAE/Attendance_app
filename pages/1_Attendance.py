@@ -1,71 +1,9 @@
 import streamlit as st
 import pandas as pd
-import os
 import re
 import requests
 from io import BytesIO
 from datetime import date, datetime, timezone
-
-# st.write("Secrets keys:", list(st.secrets.keys()))
-# get access token for Microsoft Graph API using client credentials flow
-def get_access_token():
-
-    tenant = st.secrets["TENANT_ID"]
-    client = st.secrets["CLIENT_ID"]
-    secret = st.secrets["CLIENT_SECRET"]
-
-    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
-
-    data = {
-        "client_id": client,
-        "client_secret": secret,
-        "scope": "https://graph.microsoft.com/.default",
-        "grant_type": "client_credentials",
-    }
-
-    r = requests.post(url, data=data)
-    return r.json()["access_token"]
-
-
-def get_lookup_workbook_bytes_graph():
-    token = get_access_token()
-
-    site = st.secrets["SHAREPOINT_SITE"]
-    site_name = st.secrets["SHAREPOINT_SITE_NAME"]
-    path = st.secrets["LOOKUP_FILE_PATH"]
-
-    headers = {
-        "Authorization": f"Bearer {token}"
-    }
-
-    site_url = f"https://graph.microsoft.com/v1.0/sites/{site}:/sites/{site_name}"
-    site_resp = requests.get(site_url, headers=headers)
-    site_resp.raise_for_status()
-    site_id = site_resp.json()["id"]
-
-    file_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{path}:/content"
-    file_resp = requests.get(file_url, headers=headers)
-    file_resp.raise_for_status()
-
-    content_type = file_resp.headers.get("Content-Type", "")
-    if "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" not in content_type:
-        raise ValueError(
-            f"Downloaded content is not an Excel file. Content-Type: {content_type}. "
-            f"Check LOOKUP_FILE_PATH in secrets.toml."
-        )
-
-    return file_resp.content
-
-# -------------------------------------------------------
-# AUTH CHECK
-# -------------------------------------------------------
-if "is_authed" not in st.session_state:
-    st.session_state["is_authed"] = False
-
-if not st.session_state.get("is_authed", False):
-    st.switch_page("Home.py")
-
-logged_in_email = st.session_state.get("user_email", "")
 
 # -------------------------------------------------------
 # CONFIG
@@ -144,6 +82,97 @@ div[data-testid="stExpander"] div.stButton > button {
 </style>
 """, unsafe_allow_html=True)
 
+# st.write("Secrets keys:", list(st.secrets.keys()))
+# get access token for Microsoft Graph API using client credentials flow
+@st.cache_data(ttl=300)
+def get_access_token():
+    tenant = st.secrets["TENANT_ID"]
+    client = st.secrets["CLIENT_ID"]
+    secret = st.secrets["CLIENT_SECRET"]
+
+    url = f"https://login.microsoftonline.com/{tenant}/oauth2/v2.0/token"
+
+    data = {
+        "client_id": client,
+        "client_secret": secret,
+        "scope": "https://graph.microsoft.com/.default",
+        "grant_type": "client_credentials",
+    }
+
+    r = requests.post(url, data=data)
+    r.raise_for_status()
+    return r.json()["access_token"]
+
+
+@st.cache_data(ttl=300)
+def get_lookup_workbook_bytes_graph():
+    token = get_access_token()
+    site_id = get_sharepoint_site_id()
+    path = st.secrets["LOOKUP_FILE_PATH"]
+
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    file_url = f"https://graph.microsoft.com/v1.0/sites/{site_id}/drive/root:{path}:/content"
+    file_resp = requests.get(file_url, headers=headers)
+    file_resp.raise_for_status()
+
+    content_type = file_resp.headers.get("Content-Type", "")
+    if "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" not in content_type:
+        raise ValueError(
+            f"Downloaded content is not an Excel file. Content-Type: {content_type}. "
+            f"Check LOOKUP_FILE_PATH in secrets.toml."
+        )
+
+    return file_resp.content
+
+@st.cache_data(ttl=300)
+def get_sharepoint_site_id():
+    token = get_access_token()
+
+    site = st.secrets["SHAREPOINT_SITE"]
+    site_name = st.secrets["SHAREPOINT_SITE_NAME"]
+
+    headers = {
+        "Authorization": f"Bearer {token}"
+    }
+
+    site_url = f"https://graph.microsoft.com/v1.0/sites/{site}:/sites/{site_name}"
+    site_resp = requests.get(site_url, headers=headers)
+    site_resp.raise_for_status()
+
+    return site_resp.json()["id"]
+
+def save_session_file_graph(file_name: str, file_bytes: bytes) -> None:
+    token = get_access_token()
+    site_id = get_sharepoint_site_id()
+    folder_path = st.secrets["SESSIONS_FOLDER"]
+
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    }
+
+    upload_url = (
+        f"https://graph.microsoft.com/v1.0/sites/{site_id}"
+        f"/drive/root:{folder_path}/{file_name}:/content"
+    )
+
+    upload_resp = requests.put(upload_url, headers=headers, data=file_bytes)
+    upload_resp.raise_for_status()
+
+# -------------------------------------------------------
+# AUTH CHECK
+# -------------------------------------------------------
+if "is_authed" not in st.session_state:
+    st.session_state["is_authed"] = False
+
+if not st.session_state.get("is_authed", False):
+    st.switch_page("Home.py")
+
+logged_in_email = st.session_state.get("user_email", "")
+
 
 # -------------------------------------------------------
 # HEADER
@@ -192,31 +221,20 @@ with header_right:
 
     with logout_col:
         if st.button("Logout", key="logout_btn"):
-            for k in ["is_authed", "attendance_data", "last_selected_sport", "user_code"]:
-                if k in st.session_state:
-                    del st.session_state[k]
+            st.session_state.clear()
             st.switch_page("Home.py")
 
 # -------------------------------------------------------
 
 SHAREPOINT_ATHLETE_LIST_URL = "https://teamuaesports.sharepoint.com/:x:/r/sites/AllThingsData/_layouts/15/Doc.aspx?sourcedoc=%7B24C3C107-C10B-4B9A-AFF7-FBCBD0E557E8%7D&file=Athlete%20list.xlsx&action=default&mobileredirect=true"
 
-# PATHS
+# # SHAREPOINT LINKS
 # -------------------------------------------------------
 
 
-lookup_excel_path = r"C:\Users\AishwarDhawan\General Authority of sports\All Things Data - ESUAE Attendance\Attendance\Athlete list.xlsx"
-sessions_dir = r"C:\Users\AishwarDhawan\General Authority of sports\All Things Data - ESUAE Attendance\Attendance\sessions"
-os.makedirs(sessions_dir, exist_ok=True)
-
-def get_lookup_workbook_bytes_local() -> bytes:
-    with open(lookup_excel_path, "rb") as f:
-        return f.read()
-
-def save_session_file_local(file_name: str, file_bytes: bytes) -> None:
-    file_path = os.path.join(sessions_dir, file_name)
-    with open(file_path, "wb") as f:
-        f.write(file_bytes)
+# lookup_excel_path = r"C:\Users\AishwarDhawan\General Authority of sports\All Things Data - ESUAE Attendance\Attendance\Athlete list.xlsx"
+# sessions_dir = r"C:\Users\AishwarDhawan\General Authority of sports\All Things Data - ESUAE Attendance\Attendance\sessions"
+# os.makedirs(sessions_dir, exist_ok=True)
 
 # -------------------------------------------------------
 # HELPERS
@@ -269,7 +287,7 @@ def build_attendance_df(session_id, session_date, selected_sport, coach_name,
 # LOAD LOOKUP
 # -------------------------------------------------------
 
-@st.cache_data(ttl=30)
+@st.cache_data(ttl=300)
 def load_lookup_data(file_bytes: bytes):
     athlete_df = pd.read_excel(BytesIO(file_bytes), sheet_name="athlete_names", engine="openpyxl")
     coach_df = pd.read_excel(BytesIO(file_bytes), sheet_name="coach_names", engine="openpyxl")
@@ -299,6 +317,9 @@ with action_col1:
 
 with action_col2:
     if st.button("Refresh Data"):
+        get_access_token.clear()
+        get_sharepoint_site_id.clear()
+        get_lookup_workbook_bytes_graph.clear()
         load_lookup_data.clear()
         st.rerun()
 
@@ -453,8 +474,8 @@ if save_clicked:
         with pd.ExcelWriter(output, engine="openpyxl") as writer:
             df_session.to_excel(writer, sheet_name="attendance", index=False)
 
-        save_session_file_local(file_name, output.getvalue())
-
+        # save_session_file_local(file_name, output.getvalue())
+        save_session_file_graph(file_name, output.getvalue())
         st.success(f"Saved session file: {file_name}")
         st.session_state.attendance_data = {}
 

@@ -109,11 +109,16 @@ with right:
     
     st.markdown('</div>', unsafe_allow_html=True)
     
-    if login_clicked:
-        users = st.secrets.get("auth_users", {})
-        if email in users and password == users[email]:
-            st.session_state.is_authed = True
-            st.session_state.user_email = email
-            st.switch_page("pages/1_Attendance.py")
-        else:
-            st.error("Invalid email or password.")
+if login_clicked:
+    email = email.strip().lower()
+    password = password.strip()
+    users = dict(st.secrets["auth_users"])
+    st.write(users)
+    st.write(email)
+
+    if email in users and password == users[email]:
+        st.session_state["is_authed"] = True
+        st.session_state["user_email"] = email
+        st.switch_page("pages/1_Attendance.py")
+    else:
+        st.error("Invalid email or password.")
