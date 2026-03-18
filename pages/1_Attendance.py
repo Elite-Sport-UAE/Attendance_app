@@ -252,31 +252,35 @@ def build_session_id(session_date, selected_sport, coach_name, training_type):
 
 def build_attendance_df(session_id, session_date, selected_sport, coach_name,
                         training_type, location, session_duration,
-                        attendance_dict, logged_in_email):
+                        attendance_dict, logged_in_email, athlete_sport_map):
 
     duration_minutes = int(str(session_duration).split()[0])
     saved_at_utc = datetime.now(timezone.utc).isoformat()
 
     rows = []
     for athlete_name, att in attendance_dict.items():
-        is_present = att.get("present", True)
-        status = "Present" if is_present else "Absent"
 
-        reason = "" if is_present else (att.get("reason") or "")
-        if reason == "Select reason":
-            reason = ""
+        response = att.get("response") or ""
+
+        if response in ["", None, "Select response"]:
+            status = ""
+        else:
+            status = response
+
+        athlete_sport = athlete_sport_map.get(athlete_name, selected_sport)
 
         rows.append({
             "SessionId": session_id,
             "SessionDate": str(session_date),
             "Sport": selected_sport,
+            "AthleteSport": athlete_sport,
             "CoachName": coach_name,
             "TrainingType": training_type,
             "Location": location,
             "DurationMinutes": duration_minutes,
             "AthleteName": athlete_name,
             "Status": status,
-            "Reason": reason,
+            "Reason": "",
             "SavedAtUtc": saved_at_utc,
             "LoggedInEmail": logged_in_email
         })
@@ -303,6 +307,17 @@ try:
 except Exception as e:
     st.error(f"Error loading Excel file: {e}")
     st.stop()
+# -------------------------------------------------------
+# Athlete → Sport mapping (for mixed sport sessions)
+# -------------------------------------------------------
+
+athlete_sport_map = (
+    athlete_df[["Athlete Name", "Sport"]]
+    .dropna(subset=["Athlete Name"])
+    .drop_duplicates(subset=["Athlete Name"])
+    .set_index("Athlete Name")["Sport"]
+    .to_dict()
+)
 
 st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
 
@@ -345,7 +360,7 @@ sports_list = sport_df.iloc[:, 0].dropna().astype(str).sort_values().unique().to
 coach_list = coach_df.iloc[:, 0].dropna().astype(str).sort_values().unique().tolist()
 training_type_list = training_type_df.iloc[:, 0].dropna().astype(str).sort_values().unique().tolist()
 location_list = location_df.iloc[:, 0].dropna().astype(str).sort_values().unique().tolist()
-reason_absence_list = reason_df.iloc[:, 0].dropna().astype(str).sort_values().unique().tolist()
+reason_absence_list = reason_df.iloc[:, 0].dropna().astype(str).unique().tolist()
 
 # -------------------------------------------------------
 # SESSION DETAILS
@@ -369,23 +384,74 @@ with right:
                                     ["30 minutes", "45 minutes", "60 minutes",
                                      "75 minutes", "90 minutes", "120 minutes"],
                                     index=2)
-
-# -------------------------------------------------------
 # ATTENDANCE
 # -------------------------------------------------------
 
 if "attendance_data" not in st.session_state:
     st.session_state.attendance_data = {}
 
+if "extra_athletes" not in st.session_state:
+    st.session_state.extra_athletes = []
+
+if "last_selected_sport" not in st.session_state:
+    st.session_state.last_selected_sport = None
+
 filtered_athletes = []
 
 if selected_sport != "Select sport":
 
+    # Reset extra athletes when sport changes
+    if st.session_state.last_selected_sport != selected_sport:
+        st.session_state.extra_athletes = []
+        st.session_state.last_selected_sport = selected_sport
+
     st.subheader("Mark Attendance")
 
-    filtered_athletes = athlete_df[
+    sport_athletes = athlete_df[
         athlete_df["Sport"] == selected_sport
-    ]["Athlete Name"].dropna().tolist()
+    ]["Athlete Name"].dropna().astype(str).tolist()
+
+    all_athletes_list = sorted(
+        athlete_df["Athlete Name"].dropna().astype(str).unique().tolist()
+    )
+
+    available_extra_athletes = [
+        a for a in all_athletes_list
+        if a not in sport_athletes and a not in st.session_state.extra_athletes
+    ]
+
+    add_col1, add_col2 = st.columns([4, 2])
+
+    with add_col1:
+        extra_athlete = st.selectbox(
+            "Add athlete from full list",
+            ["Select athlete"] + available_extra_athletes,
+            key="extra_athlete_select"
+        )
+
+    with add_col2:
+        st.markdown("<div style='height:28px;'></div>", unsafe_allow_html=True)
+        if st.button("Add Athlete", key="add_extra_athlete"):
+            if extra_athlete != "Select athlete":
+                st.session_state.extra_athletes.append(extra_athlete)
+                st.rerun()
+
+    if st.session_state.extra_athletes:
+        st.markdown("**Added athletes**")
+        for athlete in st.session_state.extra_athletes:
+            col_a, col_b = st.columns([5, 1])
+            with col_a:
+                st.write(athlete)
+            with col_b:
+                if st.button("Remove", key=f"remove_{athlete}"):
+                    st.session_state.extra_athletes.remove(athlete)
+                    st.rerun()
+
+    filtered_athletes = sport_athletes.copy()
+
+    for a in st.session_state.extra_athletes:
+        if a not in filtered_athletes:
+            filtered_athletes.append(a)
 
     search_query = st.text_input("Search athletes")
 
@@ -395,41 +461,68 @@ if selected_sport != "Select sport":
             if search_query.lower() in a.lower()
         ]
 
-    present_count = 0
+    selected_count = 0
 
     for athlete in filtered_athletes:
 
         if athlete not in st.session_state.attendance_data:
-            st.session_state.attendance_data[athlete] = {"present": True, "reason": None}
+            st.session_state.attendance_data[athlete] = {"response": None}
 
         col1, col2 = st.columns([4, 2])
 
         with col1:
-            present = st.checkbox(
-                athlete,
-                value=st.session_state.attendance_data[athlete]["present"],
-                key=f"{athlete}_present"
+            st.markdown(f"**{athlete}**")
+
+        with col2:
+            response_options = ["Select response"] + reason_absence_list
+            saved_response = st.session_state.attendance_data[athlete]["response"]
+
+            response = st.selectbox(
+                "Attendance Response",
+                response_options,
+                index=response_options.index(saved_response) if saved_response in response_options else 0,
+                key=f"{athlete}_response",
+                label_visibility="collapsed"
             )
 
-        st.session_state.attendance_data[athlete]["present"] = present
+        st.session_state.attendance_data[athlete]["response"] = (
+            None if response == "Select response" else response
+        )
 
-        if present:
-            present_count += 1
-            st.session_state.attendance_data[athlete]["reason"] = None
-        else:
-            with col2:
-                reason = st.selectbox(
-                    "Reason for absence",
-                    ["Select reason"] + reason_absence_list,
-                    key=f"{athlete}_reason"
-                )
-            st.session_state.attendance_data[athlete]["reason"] = reason
+        if response != "Select response":
+            selected_count += 1
 
-    st.write(f"{present_count} / {len(filtered_athletes)} athletes present")
+    st.write(f"{selected_count} / {len(filtered_athletes)} athletes updated")
 
-# -------------------------------------------------------
 # SAVE
 # -------------------------------------------------------
+all_answered = all(
+    st.session_state.attendance_data[a].get("response") not in [None, "", "Select response"]
+    for a in filtered_athletes
+)
+
+missing_fields = []
+
+if selected_sport == "Select sport":
+    missing_fields.append("Sport")
+
+if coach_name == "Select coach":
+    missing_fields.append("Coach")
+
+if training_type == "Select type":
+    missing_fields.append("Training Type")
+
+if location == "Select location":
+    missing_fields.append("Location")
+
+if len(filtered_athletes) == 0:
+    missing_fields.append("Athletes")
+
+if missing_fields:
+    st.error(
+        "Please complete required fields: "
+        + ", ".join(missing_fields)
+    )
 
 ready_to_save = (
     selected_sport != "Select sport"
@@ -437,47 +530,53 @@ ready_to_save = (
     and training_type != "Select type"
     and location != "Select location"
     and len(filtered_athletes) > 0
+    and all_answered
 )
 
 st.markdown("<div class='center-save'>", unsafe_allow_html=True)
 
-save_clicked = st.button("Save Attendance", disabled=not ready_to_save)
+save_clicked = st.button("Save Attendance")
 
 st.markdown("</div>", unsafe_allow_html=True)
+
 if save_clicked:
 
-    attendance_to_save = {
-        a: st.session_state.attendance_data[a]
-        for a in filtered_athletes
-    }
+    if missing_fields:
+        st.error("Please complete required fields: " + ", ".join(missing_fields))
 
-    try:
-        session_id = build_session_id(
-            session_date, selected_sport, coach_name, training_type
-        )
+    else:
+        attendance_to_save = {
+            a: st.session_state.attendance_data[a]
+            for a in filtered_athletes
+        }
 
-        df_session = build_attendance_df(
-            session_id=session_id,
-            session_date=session_date,
-            selected_sport=selected_sport,
-            coach_name=coach_name,
-            training_type=training_type,
-            location=location,
-            session_duration=session_duration,
-            attendance_dict=attendance_to_save,
-            logged_in_email=logged_in_email
-        )
+        try:
+            session_id = build_session_id(
+                session_date, selected_sport, coach_name, training_type
+            )
 
-        file_name = f"{session_id}.xlsx"
-        output = BytesIO()
+            df_session = build_attendance_df(
+                session_id=session_id,
+                session_date=session_date,
+                selected_sport=selected_sport,
+                coach_name=coach_name,
+                training_type=training_type,
+                location=location,
+                session_duration=session_duration,
+                attendance_dict=attendance_to_save,
+                logged_in_email=logged_in_email,
+                athlete_sport_map=athlete_sport_map
+            )
 
-        with pd.ExcelWriter(output, engine="openpyxl") as writer:
-            df_session.to_excel(writer, sheet_name="attendance", index=False)
+            file_name = f"{session_id}.xlsx"
+            output = BytesIO()
 
-        # save_session_file_local(file_name, output.getvalue())
-        save_session_file_graph(file_name, output.getvalue())
-        st.success(f"Saved session file: {file_name}")
-        st.session_state.attendance_data = {}
+            with pd.ExcelWriter(output, engine="openpyxl") as writer:
+                df_session.to_excel(writer, sheet_name="attendance", index=False)
 
-    except Exception as e:
-        st.error(f"Save failed: {e}")
+            save_session_file_graph(file_name, output.getvalue())
+            st.success(f"Saved session file: {file_name}")
+            st.session_state.attendance_data = {}
+
+        except Exception as e:
+            st.error(f"Save failed: {e}")
