@@ -341,7 +341,7 @@ with action_col2:
 with action_col3:
     st.link_button(
         "Attendance Report",
-        "https://app.powerbi.com/groups/9df28666-ff86-42f8-ad40-3a7acea422af/reports/5ee5c741-3f8e-40d5-95a7-d1e4a43a013f/a89140f6462a493e84e0?experience=power-bi"
+        "https://app.powerbi.com/groups/9df28666-ff86-42f8-ad40-3a7acea422af/reports/6f28209f-a571-49b6-99d2-c43725ffd5e7/c95f372363abd3e9be95?experience=power-bi"
     )
 
 st.markdown("<br>", unsafe_allow_html=True)
