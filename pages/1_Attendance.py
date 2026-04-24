@@ -9,7 +9,7 @@ from datetime import date, datetime, timezone
 # CONFIG
 # -------------------------------------------------------
 
-st.set_page_config(page_title="Attendance Portal", layout="wide")
+st.set_page_config(page_title="Sport Engagement Portal", layout="wide")
 
 st.markdown(
     """
@@ -79,6 +79,18 @@ div[data-testid="stExpander"] div.stButton > button {
     font-weight: 500 !important;
     text-decoration: none !important;
 }
+/* Force all widget labels bold */
+div[data-testid="stWidgetLabel"] * {
+    font-weight: 700 !important;
+}
+
+/* Extra fallback for current Streamlit label structure */
+label,
+label *,
+[data-testid="stMarkdownContainer"] p {
+    font-weight: 700 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
@@ -188,10 +200,10 @@ with header_mid:
         """
         <div style="padding-top:12px;">
             <div style="font-size:34px; font-weight:700; color:#111827;">
-                ESUAE Attendance Portal
+                ESUAE Sport Engagement Portal
             </div>
             <div style="font-size:15px; color:#6B7280;">
-                Elite Sport UAE • Training Session Attendance
+                Elite Sport UAE • Training Engagement
             </div>
         </div>
         """,
