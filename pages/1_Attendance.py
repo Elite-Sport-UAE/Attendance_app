@@ -393,7 +393,7 @@ with right:
     selected_sport = st.selectbox("Sport", ["Select sport"] + sports_list)
     training_type = st.selectbox("Training Type", ["Select type"] + training_type_list)
     session_duration = st.selectbox("Session Duration",
-                                    ["30 minutes", "45 minutes", "60 minutes",
+                                    ["0 minutes","30 minutes", "45 minutes", "60 minutes",
                                      "75 minutes", "90 minutes", "120 minutes"],
                                     index=2)
 # ATTENDANCE

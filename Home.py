@@ -1,6 +1,6 @@
 import streamlit as st
 
-st.set_page_config(page_title="ESUAE Attendance", layout="wide")
+st.set_page_config(page_title="ESUAE Sport Engagement", layout="wide")
 
 st.markdown("""
 <style>
