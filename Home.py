@@ -119,6 +119,6 @@ if login_clicked:
     if email in users and password == users[email]:
         st.session_state["is_authed"] = True
         st.session_state["user_email"] = email
-        st.switch_page("pages/1_Attendance.py")
+        st.switch_page("pages/1_Sport_Engagement.py")
     else:
         st.error("Invalid email or password.")
