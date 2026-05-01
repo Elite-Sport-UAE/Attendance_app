@@ -417,7 +417,7 @@ if selected_sport != "Select sport":
         st.session_state.extra_athletes = []
         st.session_state.last_selected_sport = selected_sport
 
-    st.subheader("Mark Attendance")
+    st.subheader("Select Athlete Status & Reason for Absence")
 
     sport_athletes = athlete_df[
         athlete_df["Sport"] == selected_sport
