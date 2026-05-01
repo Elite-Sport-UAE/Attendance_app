@@ -547,7 +547,7 @@ ready_to_save = (
 
 st.markdown("<div class='center-save'>", unsafe_allow_html=True)
 
-save_clicked = st.button("Save Attendance")
+save_clicked = st.button("Save Session")
 
 st.markdown("</div>", unsafe_allow_html=True)
 
